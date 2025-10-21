@@ -1,4 +1,6 @@
 
+
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import json
@@ -211,7 +213,7 @@ def load_dictionary():
             'къуй': 'яма',
             'миз': 'язык (анатом.)',
             'чаIл': 'язык (линг.)',
-            'лугъáт': 'язык (линг.)',
+            'лугъát': 'язык (линг.)',
             'гъылы́гъ': 'яйцо',
             'э1ч': 'яблоко',
             'мизид кIеъ': 'кончик языка',
@@ -341,6 +343,19 @@ def save_user_data(user_data):
         json.dump(user_data, f, ensure_ascii=False, indent=2)
 
 
+def load_feedbacks():
+    if os.path.exists('feedbacks.json'):
+        with open('feedbacks.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    else:
+        return []
+
+
+def save_feedbacks(feedbacks):
+    with open('feedbacks.json', 'w', encoding='utf-8') as f:
+        json.dump(feedbacks, f, ensure_ascii=False, indent=2)
+
+
 def is_admin(username):
     return username == "m001rutul"
 
@@ -458,8 +473,6 @@ PAYMENT_DETAILS = {
         "number": "79884490537",
         "url": "https://www.tinkoff.ru/rm/yakubov.ruslan98/RSqSy49856/"
     },
-
-
 }
 
 
@@ -489,7 +502,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("👥 Список пользователей", callback_data="admin_list_users")],
         [InlineKeyboardButton("➕ Активировать доступ", callback_data="admin_activate_user")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")]
+        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("📝 Отзывы", callback_data="admin_feedbacks")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -518,6 +532,8 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await activate_user_prompt(query, context)
     elif action == "admin_stats":
         await show_admin_stats(query, context)
+    elif action == "admin_feedbacks":
+        await show_feedbacks(query, context)
     elif action == "admin_back":
         await admin_command(update, context)
 
@@ -578,6 +594,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     text=f"🎉 *Ваш доступ активирован!*\n\n"
                          f"✅ Теперь у вас неограниченный доступ к боту на 30 дней!\n"
                          f"📅 Доступ активен до: {paid_until.strftime('%d.%m.%Y')}\n\n"
+                         f"💬 *Хотите оставить отзыв?* Используйте команду /feedback\n\n"
+                         f"📢 *Наш канал:* https://t.me/Rutultranslate\n\n"
                          f"Спасибо за оплату! 🎊",
                     parse_mode='Markdown'
                 )
@@ -621,6 +639,27 @@ async def show_admin_stats(query, context):
     await query.edit_message_text(stats_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 
+async def show_feedbacks(query, context):
+    feedbacks = load_feedbacks()
+
+    if not feedbacks:
+        await query.edit_message_text("📝 Отзывов пока нет")
+        return
+
+    feedbacks_text = "📝 *Последние отзывы:*\n\n"
+
+    for i, feedback in enumerate(feedbacks[-10:], 1):
+        user_id = feedback.get('user_id', 'Неизвестно')
+        text = feedback.get('text', '')
+        date = feedback.get('date', '')
+        feedbacks_text += f"{i}. 👤 `{user_id}`\n   📅 {date}\n   💬 {text}\n\n"
+
+    keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="admin_back")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(feedbacks_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username
@@ -629,6 +668,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = f"""🤖 Привет! Я бот-переводчик с рутульского на русский и с русского на рутульский!
 
 📝 Просто напиши слово на любом языке - я переведу его.
+Напишите отзыв пожалуйста! канал(https://t.me/Rutultranslate)
 
 🔢 Лимит использования: {remaining}/10 слов в день
 💎 После исчерпания лимита доступна оплата 80 руб. за неограниченный доступ
@@ -639,6 +679,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /stats - статистика словаря
 /pay - оплатить доступ
 /myid - узнать свой ID
+/feedback - оставить отзыв
 /help - помощь
 /cancel - отменить добавление"""
     await update.message.reply_text(welcome_text)
@@ -660,7 +701,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ➕ Добавить новое слово: /addword
 📊 Статистика словаря: /stats
 🆔 Узнать свой ID: /myid
-❌ Отменить добавление: /cancel"""
+💬 Оставить отзыв: /feedback
+❌ Отменить добавление: /cancel
+
+📢 *Наш канал:* https://t.me/Rutultranslate"""
     await update.message.reply_text(help_text)
 
 
@@ -679,6 +723,84 @@ async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+
+    user_data = load_user_data()
+    user_id_str = str(user_id)
+
+    # Проверяем, есть ли у пользователя активная подписка
+    has_paid_access = False
+    if user_id_str in user_data and user_data[user_id_str].get('paid_until'):
+        paid_until = datetime.fromisoformat(user_data[user_id_str]['paid_until'])
+        if paid_until > datetime.now():
+            has_paid_access = True
+
+    if not has_paid_access:
+        await update.message.reply_text(
+            "💬 *Оставить отзыв могут только пользователи с оплаченным доступом*\n\n"
+            "💎 Оплатите доступ через /pay чтобы оставить отзыв о работе бота!\n\n"
+            "📢 *Наш канал:* https://t.me/Rutultranslate",
+            parse_mode='Markdown'
+        )
+        return
+
+    context.user_data['waiting_for_feedback'] = True
+    await update.message.reply_text(
+        "💬 *Напишите ваш отзыв о работе бота:*\n\n"
+        "Расскажите, что вам нравится, что можно улучшить, или просто поделитесь впечатлениями!",
+        parse_mode='Markdown'
+    )
+
+
+async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+
+    if not context.user_data.get('waiting_for_feedback'):
+        return
+
+    feedback_text = update.message.text.strip()
+
+    if len(feedback_text) < 5:
+        await update.message.reply_text("❌ Отзыв слишком короткий. Напишите хотя бы 5 символов.")
+        return
+
+    # Сохраняем отзыв
+    feedbacks = load_feedbacks()
+    feedbacks.append({
+        'user_id': user_id,
+        'username': username,
+        'text': feedback_text,
+        'date': datetime.now().strftime('%d.%m.%Y %H:%M')
+    })
+    save_feedbacks(feedbacks)
+
+    context.user_data['waiting_for_feedback'] = False
+
+    await update.message.reply_text(
+        "✅ *Спасибо за ваш отзыв!*\n\n"
+        "Ваше мнение очень важно для нас и поможет улучшить бота!\n\n"
+        "📢 *Подписывайтесь на наш канал:* https://t.me/Rutultranslate",
+        parse_mode='Markdown'
+    )
+
+    # Уведомляем администратора
+    try:
+        admin_id = 79884490537  # Замените на ваш ID
+        await context.bot.send_message(
+            chat_id=admin_id,
+            text=f"📝 *Новый отзыв!*\n\n"
+                 f"👤 Пользователь: `{user_id}`\n"
+                 f"👤 Username: @{username}\n"
+                 f"💬 Отзыв: {feedback_text}",
+            parse_mode='Markdown'
+        )
+    except:
+        pass
+
+
 async def pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data = load_user_data()
@@ -695,7 +817,6 @@ async def pay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("💳 Тинькофф", callback_data="pay_tinkoff")],
         [InlineKeyboardButton("💳 ОзонБанк", callback_data="pay_Ozon")],
-
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -737,11 +858,14 @@ async def handle_payment_callback(update: Update, context: ContextTypes.DEFAULT_
 *Или перейдите по ссылке для быстрой оплаты:*
 [{bank_info['name']}]({bank_info['url']})
 
-⚠ *Внимание:* После оплаты отправьте скриншот чека @m001rutul для проверки и активации доступа."""
+⚠ *Внимание:* После оплаты отправьте скриншот чека @m001rutul для проверки и активации доступа.
+
+💬 *После активации доступа вы сможете оставить отзыв командой /feedback*"""
 
         keyboard = [
             [InlineKeyboardButton("🔙 К выбору банков", callback_data="back_to_banks")],
-            [InlineKeyboardButton("🆔 Мой ID", callback_data="show_my_id")]
+            [InlineKeyboardButton("🆔 Мой ID", callback_data="show_my_id")],
+            [InlineKeyboardButton("📢 Наш канал", url="https://t.me/Rutultranslate")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -781,7 +905,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 Ваш ID: `{user_id}`\n"
             f"👤 Ваш username: @{username}\n"
             f"⏳ Доступ будет активирован после проверки оплаты\n\n"
-            f"Обычно это занимает до 1 часа",
+            f"Обычно это занимает до 1 часа\n\n"
+            f"💬 *После активации не забудьте оставить отзыв командой /feedback*",
             parse_mode='Markdown'
         )
 
@@ -855,7 +980,8 @@ async def translate_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• 80 руб. за 30 дней неограниченного доступа\n"
             f"• Используйте команду /pay\n\n"
             f"🆔 Ваш ID для активации: `{user_id}`\n\n"
-            f"После оплаты отправьте чек и ID @m001rutul для активации",
+            f"После оплаты отправьте чек и ID @m001rutul для активации\n\n"
+            f"📢 *Наш канал:* https://t.me/Rutultranslate",
             parse_mode='Markdown'
         )
         return
@@ -936,7 +1062,8 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 Статистика словаря:\n\n"
         f"• Всего рутульских слов (ключей): {total_words}\n"
         f"• Уникальных русских переводов: {unique_russian}\n"
-        f"• Ваш остаток слов: {remaining}/10"
+        f"• Ваш остаток слов: {remaining}/10\n\n"
+        f"📢 *Наш канал:* https://t.me/Rutultranslate"
     )
     await update.message.reply_text(stats_text)
 
@@ -946,6 +1073,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in user_data_dict:
         del user_data_dict[user_id]
         await update.message.reply_text("❌ Процесс добавления слова отменен")
+    elif context.user_data.get('waiting_for_feedback'):
+        context.user_data['waiting_for_feedback'] = False
+        await update.message.reply_text("❌ Отправка отзыва отменена")
     else:
         await update.message.reply_text("Нечего отменять")
 
@@ -958,6 +1088,7 @@ app.add_handler(CommandHandler("addword", add_word_start))
 app.add_handler(CommandHandler("stats", show_stats))
 app.add_handler(CommandHandler("pay", pay_command))
 app.add_handler(CommandHandler("myid", my_id))
+app.add_handler(CommandHandler("feedback", feedback_command))
 app.add_handler(CommandHandler("cancel", cancel))
 app.add_handler(CommandHandler("admin", admin_command))
 
@@ -968,11 +1099,12 @@ app.add_handler(CallbackQueryHandler(handle_admin_callback, pattern="^admin_"))
 
 app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_message), group=1)
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_feedback), group=2)
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate_word))
 
 print("🤖 Бот запущен!")
 print("🛠 Админ-панель: /admin (для @m001rutul)")
+print("📢 Канал: https://t.me/Rutultranslate")
 
 app.run_polling()
-
 
